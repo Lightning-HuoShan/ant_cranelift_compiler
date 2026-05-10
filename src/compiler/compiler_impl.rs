@@ -2332,14 +2332,19 @@ mod tests {
     };
     use ant_typed_module::{module::TypedModule, ty_context::TypeContext};
 
-    use crate::compiler::{Compiler, compile_to_executable, create_target_isa, table::SymbolTable};
+    use crate::{args::read_arg, compiler::{Compiler, compile_to_executable, create_target_isa, table::SymbolTable}, link_utils::{TargetTriple, get_target_triple_or_default}};
 
     #[test]
     fn simple_program() {
         let file: std::sync::Arc<str> = "__simple_program__".into();
 
+        let target_triple = TargetTriple::new(get_target_triple_or_default(&read_arg()));
+
         // 创建目标 ISA
-        let target_isa = create_target_isa();
+        let target_isa = create_target_isa(
+            target_triple.os == "macos" || target_triple.vendor == "apple",
+            "none",
+        );
 
         // 解析ast
         let tokens = (&mut Lexer::new(

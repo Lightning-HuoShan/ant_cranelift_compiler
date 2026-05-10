@@ -21,6 +21,7 @@ use ant_id::DefId;
 use ant_ty::TyId;
 use ant_typed_module::module::TypedModule;
 use cranelift::prelude::Type;
+use cranelift_codegen::settings::Configurable;
 use cranelift_codegen::{isa::TargetIsa, settings};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataId, FuncId};
@@ -136,9 +137,10 @@ pub trait CompileState<'a, 'b> {
 }
 
 // 创建目标 ISA 的辅助函数
-pub fn create_target_isa() -> Arc<dyn TargetIsa> {
-    let flag_builder = settings::builder();
-    // flag_builder.set("opt_level", "speed").unwrap();
+pub fn create_target_isa(is_pic: bool, opt_level: &str) -> Arc<dyn TargetIsa> {
+    let mut flag_builder = settings::builder();
+    flag_builder.set("is_pic", &is_pic.to_string()).unwrap();
+    flag_builder.set("opt_level", opt_level).unwrap();
 
     let isa_builder = cranelift_native::builder().unwrap();
     isa_builder

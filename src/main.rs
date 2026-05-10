@@ -1,12 +1,16 @@
 mod args;
 mod compiler;
+mod link_utils;
 mod traits;
 mod value;
-mod link_utils;
 
 use std::{cell::RefCell, collections::HashMap, fs, path::PathBuf, rc::Rc, sync::Arc};
 
-use crate::compiler::{Compiler, compile_to_executable, create_target_isa, table::SymbolTable};
+use crate::{
+    args::read_arg,
+    compiler::{Compiler, compile_to_executable, create_target_isa, table::SymbolTable},
+    link_utils::{TargetTriple, get_target_triple_or_default},
+};
 
 use ant_id::ModuleId;
 use ant_lexer::Lexer;
@@ -60,8 +64,11 @@ fn compile(arg: Args) {
         NameResolver::new_with(
             ModuleId(0),
             file_arc.clone(),
-            arg.extern_crates.iter().map(|it| PathBuf::from(it)).collect(),
-            HashMap::new()
+            arg.extern_crates
+                .iter()
+                .map(|it| PathBuf::from(it))
+                .collect(),
+            HashMap::new(),
         )
     } else {
         NameResolver::new(ModuleId(0), file_arc.clone())
@@ -112,8 +119,13 @@ fn compile(arg: Args) {
 
     let krate = name_resolver.krate;
 
+    let target_triple = TargetTriple::new(get_target_triple_or_default(&read_arg()));
+
     let compiler = Compiler::new(
-        create_target_isa(),
+        create_target_isa(
+            target_triple.os == "macos" || target_triple.vendor == "apple",
+            "none",
+        ),
         file_arc.clone(),
         Rc::new(RefCell::new(SymbolTable::new())),
         krate,
