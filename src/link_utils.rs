@@ -231,6 +231,10 @@ pub fn get_linker_config(
 
 /// 获取编译器目录
 pub fn get_compiler_dir() -> String {
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        return manifest_dir;
+    }
+
     // 直接以编译器目录为主
     std::env::current_exe()
         .unwrap_or_else(|_| PathBuf::from("."))
