@@ -2,6 +2,7 @@ mod args;
 mod compiler;
 mod traits;
 mod value;
+mod link_utils;
 
 use std::{cell::RefCell, collections::HashMap, fs, path::PathBuf, rc::Rc, sync::Arc};
 
