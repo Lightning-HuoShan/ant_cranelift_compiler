@@ -19,9 +19,13 @@ pub struct Args {
     #[arg(short, long)]
     pub output: Option<String>,
 
+    /// Cranelift 优化等级
+    #[arg(long = "cranelift-opt-level")]
+    pub cranelift_opt_level: Option<CraneliftOptLevel>,
+
     /// 优化级别 (0-3, s, z)
     #[arg(short = 'O', default_value = "0")]
-    pub opt_level: OptLevelArg, 
+    pub opt_level: OptLevelArg,
 
     /// 包含调试信息
     #[arg(short = 'g', long = "debuginfo")]
@@ -52,6 +56,38 @@ pub struct Args {
     pub script_mode: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CraneliftOptLevel {
+    None,
+    Speed,
+    SpeedAndSize,
+}
+
+impl std::str::FromStr for CraneliftOptLevel {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            _ => Err(format!(
+                "Invalid opt level: {}. Options: 0, 1, 2, 3, s, z",
+                s
+            )),
+        }
+    }
+}
+
+impl Display for CraneliftOptLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            CraneliftOptLevel::None => "none",
+            CraneliftOptLevel::Speed => "speed",
+            CraneliftOptLevel::SpeedAndSize => "speed_and_size",
+        };
+
+        write!(f, "{s}")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct OptLevelArg(pub String);
 
@@ -61,18 +97,11 @@ impl std::str::FromStr for OptLevelArg {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "0" | "1" | "2" | "3" | "s" | "z" => Ok(OptLevelArg(s.to_string())),
-            _ => Err(format!("无效的优化级别: {}. 可选值: 0, 1, 2, 3, s, z", s)),
+            _ => Err(format!(
+                "Invalid opt level: {}. Options: 0, 1, 2, 3, s, z",
+                s
+            )),
         }
-    }
-}
-
-impl OptLevelArg {
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn is_optimized(&self) -> bool {
-        self.0 != "0"
     }
 }
 
@@ -82,9 +111,7 @@ impl Display for OptLevelArg {
     }
 }
 
-pub static mut ARG: Option<Args> = {
-    None
-};
+pub static mut ARG: Option<Args> = { None };
 
 pub fn read_arg() -> Option<Args> {
     unsafe { (*&raw const ARG).clone() }

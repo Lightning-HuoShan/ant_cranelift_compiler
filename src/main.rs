@@ -124,7 +124,9 @@ fn compile(arg: Args) {
     let compiler = Compiler::new(
         create_target_isa(
             target_triple.os == "macos" || target_triple.vendor == "apple",
-            "none",
+            &arg.cranelift_opt_level
+                .map(|it| it.to_string())
+                .unwrap_or("none".to_string()),
         ),
         file_arc.clone(),
         Rc::new(RefCell::new(SymbolTable::new())),
