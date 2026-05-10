@@ -30,13 +30,13 @@ jobs:
 
       - name: Build
         run: |
-          gcc -c include/clib/arc.c -o include/clib/arc.o
+          gcc -fPIC -c include/clib/arc.c -o include/clib/arc.o
           ar rcs include/clib/libarc.a include/clib/arc.o
           cargo build --release
 
       - name: Run tests
         run: |
-          gcc -c include/clib/arc.c -o include/clib/arc.o
+          gcc -fPIC -c include/clib/arc.c -o include/clib/arc.o
           ar rcs include/clib/libarc.a include/clib/arc.o
           cargo test --release
 
