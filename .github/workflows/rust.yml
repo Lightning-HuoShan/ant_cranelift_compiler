@@ -51,17 +51,11 @@ jobs:
           cp target/release/${{ matrix.bin }} staging/
           cp -r include staging/
           cp -r std staging/
-          
-          if [ "${{ runner.os }}" == "Windows" ]; then
-            7z a antc-${{ matrix.os }}.zip ./staging/*
-          else
-            cd staging && zip -r ../antc-${{ matrix.os }}.zip ./* && cd ..
-          fi
 
       - name: Upload zip artifact
         uses: actions/upload-artifact@v4
         with:
           # 下载时的文件名
-          name: antc-${{ matrix.os }}-package
-          # 需要上传的 zip 文件路径
-          path: antc-${{ matrix.os }}.zip
+          name: antc-${{ matrix.os }}
+          # 需要上传的路径
+          path: staging/
