@@ -1,29 +1,27 @@
-pub mod generic;
 pub mod arc;
 pub mod compile_state_impl;
 pub mod compiler_impl;
+pub mod function;
+pub mod generic;
 pub mod handler;
 pub mod table;
-pub mod function;
 
 mod constants;
 mod convert_type;
 mod imm;
 
 use std::cell::RefCell;
-use std::env::{current_dir, current_exe};
-use std::path::PathBuf;
-use std::{collections::HashMap, fs, path::Path, rc::Rc, sync::Arc};
+use std::collections::HashMap;
+use std::path::Path;
+use std::rc::Rc;
+use std::sync::Arc;
 
 use ant_crate_def::Crate;
 use ant_id::DefId;
-use ant_typed_module::module::TypedModule;
 use ant_ty::TyId;
+use ant_typed_module::module::TypedModule;
 use cranelift::prelude::Type;
-use cranelift_codegen::{
-    isa::TargetIsa,
-    settings,
-};
+use cranelift_codegen::{isa::TargetIsa, settings};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataId, FuncId};
 use cranelift_object::ObjectModule;
@@ -33,6 +31,7 @@ use crate::compiler::generic::{CompiledGenericInfo, GenericInfo};
 use crate::compiler::table::SymbolTable;
 
 use crate::args::read_arg;
+use crate::link_utils::{TargetTriple, build_static_library, get_compiler_dir, get_linker_config, get_target_triple_or_default, link_executable};
 
 pub type CompileResult<T> = Result<T, String>;
 
@@ -59,14 +58,14 @@ pub struct Compiler<'a> {
     arc_alloc: FuncId,
     arc_retain: FuncId,
     arc_release: FuncId,
-    
+
     ptr_type: Type,
 }
 
 pub struct GlobalState<'a, 'b> {
     pub target_isa: Arc<dyn TargetIsa>,
     pub module: &'a mut ObjectModule,
-    
+
     pub function_map: &'a mut HashMap<String, cranelift_module::FuncId>,
     pub data_map: &'a mut HashMap<String, cranelift_module::DataId>,
     pub generic_map: &'a mut HashMap<String, GenericInfo>,
@@ -149,163 +148,81 @@ pub fn create_target_isa() -> Arc<dyn TargetIsa> {
 
 /// 将对象代码编译为可执行文件
 ///
-/// output_path: 目录 + 文件名 + 后缀  
+/// - `object_code`: 已编译的原始对象代码（例如来自 LLVM 的 MC 层输出）
+/// - `output_path`: 最终可执行文件的完整路径（包含文件名和后缀）
+///
+/// 如果 `--compile-only` 被指定，则只生成 `.o` 目标文件并停止。
+/// 如果 `--keep-cache` 被指定，则 `.o` 文件会保留在输出文件所在目录中。
+/// 否则，`.o` 文件将使用临时文件，链接完成后会自动删除。
 pub fn compile_to_executable(
     object_code: &[u8],
     output_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use cc;
-    use tempfile;
+    use std::fs;
+    use std::path::Path;
 
-	let arg = read_arg();
-    
-    // 默认使用临时 .o；当 --keep-cache 开启时将 .o 保留在输出目录
-    let keep_cache = arg.as_ref().map(|args| args.keep_cache).unwrap_or(false);
-    let compile_only = arg.as_ref().map(|args|args.compile_only).unwrap_or(false);
-    let _temp_dir_guard: Option<tempfile::TempDir>;
-    let object_file_path = if keep_cache || compile_only {
-        let parent = output_path.parent().unwrap_or(Path::new("."));
+    let args = read_arg();
+
+    // 确定目标文件（.o）的存放位置
+    let keep_cache = args.as_ref().map(|a| a.keep_cache).unwrap_or(false);
+    let compile_only = args.as_ref().map(|a| a.compile_only).unwrap_or(false);
+
+    let (object_file_path, _temp_dir_guard) = if keep_cache || compile_only {
+        // 保留 .o 文件：放在与最终输出相同的目录中
+        let parent = output_path.parent().unwrap_or_else(|| Path::new("."));
         let stem = output_path
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("output");
-        parent.join(format!("{stem}.o"))
+        let obj_path = parent.join(format!("{stem}.o"));
+        (obj_path, None)
     } else {
+        // 使用临时目录，函数结束时自动删除
         let temp_dir = tempfile::tempdir()?;
-        let object_file_path = temp_dir.path().join("output.o");
-        _temp_dir_guard = Some(temp_dir);
-        object_file_path
+        let obj_path = temp_dir.path().join("output.o");
+        (obj_path, Some(temp_dir))
     };
+
+    // 确保输出目录存在（包括 .o 文件的父目录和最终可执行文件的父目录）
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if let Some(parent) = object_file_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    // 写入目标文件
     fs::write(&object_file_path, object_code)?;
 
-    // -------- target triple --------
-
-    if !compile_only {
-        #[cfg(target_os = "windows")]
-        let normal_target = "x86_64-pc-windows-gnu";
-
-        #[cfg(target_os = "linux")]
-        let normal_target = if cfg!(target_arch = "aarch64") {
-            "aarch64-unknown-linux-gnu"
-        } else {
-            "x86_64-unknown-linux-gnu"
-        };
-
-        
-        #[cfg(target_os = "macos")]
-        let normal_target = if cfg!(target_arch = "aarch64") {
-            "aarch64-apple-darwin"
-        } else {
-            "x86_64-apple-darwin"
-        };
-
-        let target = if let Some(args) = &arg {
-            let usr_target = &args.target_triple;
-            if usr_target.is_empty() {
-                normal_target.to_string()
-            } else {
-        		usr_target.clone()
-            }
-        } else {
-            normal_target.to_string()
-        };
-
-        // let _target: String = read_arg().map(|args|args.target_triple).unwrap_or(_target.to_string());
-        // let target: &str = _target.as_str();
-
-        // -------- 先用 cc 生成 libxxx.a --------
-        let mut build = cc::Build::new();
-        build
-            .object(&object_file_path)
-            .target(&target)
-            .host("CONSOLE")
-            .cargo_metadata(false)
-            .out_dir(output_path.parent().unwrap_or(Path::new("")));
-
-        if let Some(args) = &arg {
-            let opt = &args.opt_level;
-
-            build.opt_level_str(&opt.0);
-        } else {
-            build.opt_level(0);
-        }
-        
-        build.try_compile(output_path.file_stem().unwrap().to_str().unwrap())?;
-
-        let compiler = build.get_compiler();
-
-        let lib_name = format!(
-            "lib{}.a",
-            output_path.file_stem().unwrap().to_str().unwrap()
-        );
-        let lib_path = output_path.parent().unwrap().join(&lib_name);
-
-        // -------- 最终链接 --------
-        let compiler_dir = if std::env::var("CARGO").is_ok() {
-            current_dir().map_or(".".into(), |p| p.display().to_string())
-        } else {
-            current_exe().map_or(".".into(), |p| {
-                p.parent().map_or(".".into(), |it| it.display().to_string())
-            })
-        };
-
-        let mut command = compiler.to_command();
-        if arg.as_ref().map(|args| args.debug_info).unwrap_or(false) {
-            command.arg("-g");
-        }
-        command
-            .arg("-o")
-            .arg(output_path)
-            .arg(&lib_path)
-            .arg("-L")
-            .arg(format!("{}/include/clib", compiler_dir))
-            .arg("-l")
-            .arg("arc");
-
-        // 用户额外链接库
-        if let Some(it) = &arg {
-            for path in &it.link_with {
-                command.arg("-L").arg(
-                    PathBuf::from(path)
-                        .parent()
-                        .map_or("./".to_string(), |p| p.to_string_lossy().to_string()),
-                );
-            }
-
-            for lib in &it.link_with {
-                if lib.trim().is_empty() {
-                    continue;
-                }
-
-                let stem = PathBuf::from(&lib)
-                    .file_stem()
-                    .ok_or("invalid lib name")?
-                    .to_string_lossy()
-                    .to_string();
-
-                let name = stem.strip_prefix("lib").unwrap_or(&stem);
-                command.arg(format!("-l{name}"));
-            }
-        }
-
-        // Linux: 静态 + libc + noexecstack
-        #[cfg(target_os = "linux")]
-        {
-            command.arg("-static").arg("-lc").arg("-Wl,-z,noexecstack");
-        }
-
-        // Windows
-        #[cfg(target_os = "windows")]
-        {
-            command.arg("-static").arg("-lmsvcrt");
-        }
-        
-        // macOS: 不要 static / 不要 -lc（clang 自动处理）
-        
-        command.status().expect("link failed");
-
-        fs::remove_file(lib_path)?;
+    // 如果仅需编译，到此为止
+    if compile_only {
+        return Ok(());
     }
+
+    // 获取目标三元组
+    let target = get_target_triple_or_default(&args);
+    let target_triple = TargetTriple::new(&target);
+
+    // 将 .o 打包为静态库（这一步骤对不同平台会生成 .a 或 .lib）
+    let lib_path = build_static_library(&object_file_path, output_path, &target, &args)?;
+
+    // 准备链接器配置
+    let linker_config = get_linker_config(&target_triple)?;
+    let compiler_dir = get_compiler_dir();
+
+    // 执行最终链接
+    link_executable(
+        &target_triple,
+        &lib_path,
+        output_path,
+        &compiler_dir,
+        &linker_config,
+        &args,
+    )?;
+
+    // 清理临时静态库（它位于输出目录，命名为 lib<stem>.<a/lib>）
+    let _ = fs::remove_file(&lib_path);
+
     Ok(())
 }
 
@@ -368,19 +285,19 @@ impl<'a, 'b> CompileState<'a, 'b> for GlobalState<'a, 'b> {
     fn get_arc_release(&self) -> FuncId {
         self.arc_release
     }
-    
+
     fn get_def_functions(&mut self) -> &mut HashMap<DefId, FuncId> {
         self.def_functions
     }
-    
+
     fn get_def_datas(&mut self) -> &mut HashMap<DefId, DataId> {
         self.def_datas
     }
-    
+
     fn get_krate(&'b mut self) -> &'a mut Crate<'b> {
         self.krate
     }
-    
+
     fn get_krate_ref(&'_ self) -> &'_ Crate<'_> {
         self.krate
     }
@@ -434,19 +351,19 @@ impl<'a, 'b> CompileState<'a, 'b> for FunctionState<'a, 'b> {
     fn get_arc_release(&self) -> FuncId {
         self.arc_release
     }
-    
+
     fn get_def_functions(&mut self) -> &mut HashMap<DefId, FuncId> {
         self.def_functions
     }
-    
+
     fn get_def_datas(&mut self) -> &mut HashMap<DefId, DataId> {
         self.def_datas
     }
-    
+
     fn get_krate(&'b mut self) -> &'a mut Crate<'b> {
         self.krate
     }
-    
+
     fn get_krate_ref(&self) -> &Crate<'_> {
         self.krate
     }
