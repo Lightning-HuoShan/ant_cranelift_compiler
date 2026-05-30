@@ -770,10 +770,7 @@ impl<'a> Compiler<'a> {
                     .def_var(Variable::from_u32(symbol.var_index as u32), val);
 
                 // unit
-                Ok(state
-                    .builder
-                    .ins()
-                    .iconst(convert_type_to_cranelift_type(&Ty::Unit), 0))
+                Ok(val)
             }
 
             TypedStatement::Block {
