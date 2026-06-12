@@ -1993,6 +1993,16 @@ impl<'a> Compiler<'a> {
                     .func_addr(platform_width_to_int_type(), func_ref))
             }
 
+            TypedExpression::EnumVariant { enum_name, variant_name, .. } => {
+                // 枚举体的编译需要枚举定义信息
+                // 这里返回一个指向枚举项的指针/标签值
+                // 具体实现需要根据枚举的内存布局来决定
+                Err(format!(
+                    "enum variant access `{}=>{}` not yet implemented in compiler",
+                    enum_name.value, variant_name.value
+                ))
+            }
+
             _ => todo!("impl function 'compile_expr'"),
         }
     }

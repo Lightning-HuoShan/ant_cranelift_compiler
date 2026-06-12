@@ -29,6 +29,7 @@ impl NeedGc for Ty {
             Ty::Function { .. } => false,
             Ty::AppliedGeneric(_, _) => true,
             Ty::Struct { .. } => true,
+            Ty::Enum { .. } => true,
             Ty::Ptr(_) => false,
             Ty::Infer(_) => false,
             Ty::InferInt(_) => false,
