@@ -9,17 +9,17 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ant_id = { git = "https://github.com/ant-pl/TypedAnt.git", package = "id" }
-ant_typed_ast = { git = "https://github.com/ant-pl/TypedAnt.git", package = "typed_ast" }
-ant_typed_module = { git = "https://github.com/ant-pl/TypedAnt.git", package = "typed_module" }
-ant_ty = { git = "https://github.com/ant-pl/TypedAnt.git", package = "ty" }
-ant_crate_def = { git = "https://github.com/ant-pl/TypedAnt.git", package = "ant_crate_def" }
-ant_name_resolver = { git = "https://github.com/ant-pl/TypedAnt.git", package = "name_resolver" }
-ant_type_checker = { git = "https://github.com/ant-pl/TypedAnt.git", package = "type_checker" }
-ant_ast = { git = "https://github.com/ant-pl/TypedAnt.git", package = "ast" }
-ant_parser = { git = "https://github.com/ant-pl/TypedAnt.git", package = "parser" }
-ant_lexer = { git = "https://github.com/ant-pl/TypedAnt.git", package = "lexer" }
-ant_token = { git = "https://github.com/ant-pl/TypedAnt.git", package = "token" }
+ant_id = { path = "../TypedAnt/id", package = "id" }
+ant_typed_ast = { path = "../TypedAnt/typed_ast", package = "typed_ast" }
+ant_typed_module = { path = "../TypedAnt/typed_module", package = "typed_module" }
+ant_ty = { path = "../TypedAnt/ty", package = "ty" }
+ant_crate_def = { path = "../TypedAnt/ant_crate_def", package = "ant_crate_def" }
+ant_name_resolver = { path = "../TypedAnt/name_resolver", package = "name_resolver" }
+ant_type_checker = { path = "../TypedAnt/type_checker", package = "type_checker" }
+ant_ast = { path = "../TypedAnt/ast", package = "ast" }
+ant_parser = { path = "../TypedAnt/parser", package = "parser" }
+ant_lexer = { path = "../TypedAnt/lexer", package = "lexer" }
+ant_token = { path = "../TypedAnt/token", package = "token" }
 
 # Cranelift dependencies for object file generation
 cranelift = "0.110.0"
